@@ -60,6 +60,7 @@ type pageData struct {
 	Title       string
 	ExtraPath   string
 	Ro          bool
+	Room        string
 	RowsFiles   []pageRowData
 	RowsFolders []pageRowData
 }
@@ -169,7 +170,11 @@ func humanize(bytes int64) string {
 // Handles content requests from the frontend.
 // If the file is a directory, it will be listed, otherwise it will be served directly.
 func handleContent(c echo.Context) error {
-	filePath := resolvePath(c.Request().URL.Path)
+	if c.QueryParam("room") == "" {
+		return c.String(404, "No room specified !")
+	}
+
+	filePath := resolvePath(c, c.Request().URL.Path)
 	stat, err := osStat(filePath)
 	if os.IsNotExist(err) {
 		return c.String(404, "error")
@@ -192,18 +197,20 @@ func handleContent(c echo.Context) error {
 
 // Handles a directory list from the frontend.
 func handleListDir(c echo.Context, filePath string) error {
+	roomName := c.QueryParam("room")
 	p := pageData{
 		// leading slash is required by frontend
 		Title:     "/",
 		ExtraPath: *prefixPath,
 		Ro:        *readOnly,
+		Room:      roomName,
 	}
-	rel, err := filepath.Rel(rootPath, filePath)
+	rel, err := filepath.Rel(rootPath+"/"+roomName, filePath)
 	if err != nil {
 		return err
 	}
 	if rel != "." {
-		p.RowsFolders = append(p.RowsFolders, pageRowData{"../", "../", "", "folder"})
+		p.RowsFolders = append(p.RowsFolders, pageRowData{"../", "../?room="+roomName, "", "folder"})
 		// trailing slash is required by frontend
 		p.Title += filepath.ToSlash(rel + "/")
 	}
@@ -224,14 +231,14 @@ func handleListDir(c echo.Context, filePath string) error {
 			p.RowsFolders = append(p.RowsFolders, pageRowData{
 				// trailing slash is required by frontend
 				file.Name() + "/",
-				file.Name(),
+				file.Name()+"?room="+roomName,
 				"",
 				"folder",
 			})
 		} else {
 			p.RowsFiles = append(p.RowsFiles, pageRowData{
 				file.Name(),
-				file.Name(),
+				file.Name()+"?room="+roomName,
 				humanize(fileStat.Size()),
 				strings.TrimLeft(filepath.Ext(file.Name()), "."),
 			})
@@ -249,7 +256,7 @@ func handleListDir(c echo.Context, filePath string) error {
 func handleZip(c echo.Context) error {
 	zipPath := c.QueryParam("zipPath")
 	zipName := c.QueryParam("zipName")
-	zipFullPath := resolvePath(zipPath)
+	zipFullPath := resolvePath(c, zipPath)
 	if _, err := osStat(zipFullPath); os.IsNotExist(err) {
 		return c.String(404, "error")
 	} else if err != nil {
@@ -309,7 +316,7 @@ func handleUpload(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	dstPath := resolvePath(unescapedPath)
+	dstPath := resolvePath(c, unescapedPath)
 	reader, err := c.Request().MultipartReader()
 	if err != nil {
 		return err
@@ -341,11 +348,11 @@ func handleRPC(c echo.Context) error {
 	}
 	switch rpc.Call {
 	case "mkdirp":
-		err = os.MkdirAll(resolvePath(rpc.Args[0]), os.ModePerm)
+		err = os.MkdirAll(resolvePath(c, rpc.Args[0]), os.ModePerm)
 	case "mv":
-		err = os.Rename(resolvePath(rpc.Args[0]), resolvePath(rpc.Args[1]))
+		err = os.Rename(resolvePath(c, rpc.Args[0]), resolvePath(c, rpc.Args[1]))
 	case "rm":
-		err = os.RemoveAll(resolvePath(rpc.Args[0]))
+		err = os.RemoveAll(resolvePath(c, rpc.Args[0]))
 	default:
 		return errors.New("unknown rpc call")
 	}
@@ -375,12 +382,14 @@ func osWalk(path string, walkFn filepath.WalkFunc) error {
 // Resolves file paths relative to the rootPath, stripping away the prefixPath.
 // Accounts for symlinks, if enabled.
 // Prevents any directory traversal attacks.
-func resolvePath(unsafePath string) string {
+func resolvePath(c echo.Context, unsafePath string) string {
+        room_context := c.QueryParam("room")
+	
 	unsafePath, err := filepath.Rel(*prefixPath, filepath.Clean("//"+unsafePath))
 	if err != nil {
 		panic(err)
 	}
-	newPath := filepath.Join(rootPath, filepath.Clean("//"+unsafePath))
+	newPath := filepath.Join(rootPath, filepath.Clean("//"+room_context+"/"+unsafePath))
 	if *symlinks {
 		evalNewPath, err := filepath.EvalSymlinks(newPath)
 		if err == nil && evalNewPath != "" {
