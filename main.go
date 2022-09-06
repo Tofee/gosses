@@ -179,7 +179,7 @@ func handleContent(c echo.Context) error {
 	// error on hidden files but not current directory '.'
 	if *skipHidden && strings.HasPrefix(stat.Name(), ".") {
 		return c.String(404, "error")
-	}
+        }
 	if !stat.IsDir() {
 		http.ServeFile(c.Response().Writer, c.Request(), filePath)
 	} else {
@@ -217,7 +217,8 @@ func handleListDir(c echo.Context, filePath string) error {
 		}
 		fileStat, err := osStat(filepath.Join(filePath, file.Name()))
 		if err != nil {
-			return err
+			log.Info().Str("state", "Could not stat file: "+file.Name()).Send()
+			continue
 		}
 		if fileStat.IsDir() {
 			p.RowsFolders = append(p.RowsFolders, pageRowData{
