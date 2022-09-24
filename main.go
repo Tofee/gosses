@@ -356,11 +356,11 @@ func handleRPC(c echo.Context) error {
 }
 
 func osStat(name string) (os.FileInfo, error) {
-	if *symlinks {
+//	if *symlinks {
 		return os.Stat(name)
-	} else {
-		return os.Lstat(name)
-	}
+//	} else {
+//		return os.Lstat(name)
+//	}
 }
 
 func osWalk(path string, walkFn filepath.WalkFunc) error {
