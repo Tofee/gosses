@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -33,6 +34,7 @@ var symlinks = flag.Bool("symlinks", false, "Follow symlinks. "+
 var skipHidden = flag.Bool("k", true, "Skip files prefixed with '.'")
 var readOnly = flag.Bool("ro", false, "Read-only mode. Disable upload, rename, move, etc")
 var logJson = flag.Bool("json", false, "Output logs in JSON")
+var haveRooms = flag.Bool("rooms", false, "Expect a room subfolder after the prefix")
 
 var rootPath string
 var pageTemplate *template.Template
@@ -170,6 +172,23 @@ func humanize(bytes int64) string {
 // If the file is a directory, it will be listed, otherwise it will be served directly.
 func handleContent(c echo.Context) error {
 	filePath := resolvePath(c.Request().URL.Path)
+	
+	// check for room presence after the prefix part
+	if *haveRooms {
+	  re := regexp.MustCompile("^" + rootPath + "/(\\w+)")
+	  roomFound := re.FindStringSubmatch(filePath)
+	  if roomFound != nil {
+	    _, err := osStat(rootPath + "/" + roomFound[1])
+	    if os.IsNotExist(err) {
+  		  return c.String(404, "Room " + roomFound[1] + " does not exist!")
+	    } else if err != nil {
+		    return err
+	    }
+	  } else {
+		  return c.String(404, "No room specified!")
+	  }
+  }
+		
 	stat, err := osStat(filePath)
 	if os.IsNotExist(err) {
 		return c.String(404, "error")
